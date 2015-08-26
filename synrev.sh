@@ -11,7 +11,7 @@ DEFAULT_PORT='24800'
 ###     START     ###
 #####################
 
-read -d '' REMORE_SCRIPT << 'END_OF_REMOTE_SCRIPT'
+read -d '' REMORE_SCRIPT << 'EOREMOTE'
 #!/bin/bash
 
 # Usage: synergy-client-start.sh <server ip> [<server port>]
@@ -45,7 +45,7 @@ else
 	SERVER_PORT='24800'
 fi
 
-echo Connecting to "$SERVER_IP":"$SERVER_PORT"
+echo Connecting back to "$SERVER_IP":"$SERVER_PORT"
 
 if uname | grep -qi '\\<darwin\\>' ; then
 	PATH=/Applications/Synergy.app/Contents/MacOS:"$HOME"/Applications/Synergy.app/Contents/MacOS:"$PATH"
@@ -58,26 +58,29 @@ if [ $? -ne 0 ] ; then
 	exit 1
 fi
 
-SYN_DIR="${SYNERGYC_PATH%/[^/]*}"
-
 while IFS= read -r PS_LINE ; do
 	PS_LINE_ARRAY=($PS_LINE)
-	SYN_PID="${PS_LINE_ARRAY[1]}"
-	SYN_BIN="${PS_LINE_ARRAY[10]}"
+	PS_COMMAND="${PS_LINE_ARRAY[10]}"
 
-	echo kill "$SYN_PID"
-
+	echo "$PS_COMMAND" | grep -iq 'synergy[sc]\\?$'
 	if [ $? -ne 0 ] ; then
-		echo "Error: Can not kill old process $SYN_PID: $SYN_BIN"
-		exit 1
+		continue
 	fi
 
+	PS_PID="${PS_LINE_ARRAY[1]}"
+	kill "$PS_PID"
+  
+	if [ $? -ne 0 ] ; then
+		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
+		exit 1
+	fi
+  
 	sleep 1
-done < <(ps uax | grep -i "$SYN_DIR"/synergy | grep -v grep)
+done < <(ps uax)
 
-echo synergyc -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" & disown 
+"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" & disown 
 
-END_OF_REMOTE_SCRIPT
+EOREMOTE
 
 #####################
 ### REMOTE SCRIPT ###
@@ -141,8 +144,48 @@ if [ -z "$MY_IP" ] ; then
 fi
 
 
-# TODO: Restart server
+# Restart server
 
+if uname | grep -qi '\<darwin\>' ; then
+	PATH=/Applications/Synergy.app/Contents/MacOS:"$HOME"/Applications/Synergy.app/Contents/MacOS:"$PATH"
+fi
+
+SYNERGYS_PATH=$(which synergys)
+
+if [ $? -ne 0 ] ; then
+	echo 'Error: Can not find synergys binary'
+	exit 1
+fi
+
+while IFS= read -r PS_LINE ; do
+	PS_LINE_ARRAY=($PS_LINE)
+	PS_COMMAND="${PS_LINE_ARRAY[10]}"
+
+	echo "$PS_COMMAND" | grep -iq 'synergy[sc]\?$'
+	if [ $? -ne 0 ] ; then
+		continue
+	fi
+
+	PS_PID="${PS_LINE_ARRAY[1]}"
+	kill "$PS_PID"
+
+	if [ $? -ne 0 ] ; then
+		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
+		exit 1
+	fi
+
+	echo -n "Waiting for $PS_COMMAND to exit..."
+	while ps "$PS_PID" >> /dev/null ; do
+		echo -n '.'
+		sleep $(echo '1 / 2' | bc -l)
+	done
+	echo ' done'
+
+done < <(ps uax)
+
+"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
+
+exit
 
 # Connect to clients
 
