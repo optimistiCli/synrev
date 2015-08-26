@@ -1,13 +1,10 @@
 #!/bin/bash
 
 # Remotely start synergy client on a mac
-# Usage: rem-sync.sh [-c <config>] [-p <port>]
+# Usage: rem-sync.sh [-c <config>] [-p <port>] [-U <remote username>]
 
 DEFAULT_CONFIG="$HOME/.synergy.conf"
 DEFAULT_PORT='24800'
-
-# /Applications/Synergy.app/Contents/MacOS/synergys -f --no-tray --debug INFO --name mySilverMachine --enable-drag-drop --enable-crypto -c /var/folders/24/9tb1jvh12tx5z4fj7xp0tlj00000gn/T/Synergy.JL5189 --address :24800
-# cat .synergy-ourMini.conf | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME"
 
 #####################
 ### REMOTE SCRIPT ###
@@ -19,8 +16,8 @@ read -d '' REMORE_SCRIPT << 'END_OF_REMOTE_SCRIPT'
 
 # Usage: synergy-client-start.sh <server ip> [<server port>]
 
-SERVER_IP="$1"
-PORT="$2"
+SERVER_IP='@IP@'
+SERVER_PORT='@PORT@'
 
 if [ -z "$SERVER_IP" ] ; then
 	echo 'Error: no server IP'
@@ -38,17 +35,17 @@ if [ $? -ne 0 ] ; then
 fi
 
 # TODO: Test me
-if [ -n "$PORT" ] ; then
-	echo "$PORT" | grep -q '^[[:digit:]]\\+$'
+if [ -n "$SERVER_PORT" ] ; then
+	echo "$SERVER_PORT" | grep -q '^[[:digit:]]\\+$'
 	if [ $? -ne 0 ] ; then 
-		echo "Error: Bad port number $PORT"
+		echo "Error: Bad port number $SERVER_PORT"
 		exit 1
 	fi
 else 
-	PORT='24800'
+	SERVER_PORT='24800'
 fi
 
-echo Connecting to "$SERVER_IP":"$PORT"
+echo Connecting to "$SERVER_IP":"$SERVER_PORT"
 
 if uname | grep -qi '\\<darwin\\>' ; then
 	PATH=/Applications/Synergy.app/Contents/MacOS:"$HOME"/Applications/Synergy.app/Contents/MacOS:"$PATH"
@@ -68,7 +65,7 @@ while IFS= read -r PS_LINE ; do
 	SYN_PID="${PS_LINE_ARRAY[1]}"
 	SYN_BIN="${PS_LINE_ARRAY[10]}"
 
-	kill "$SYN_PID"
+	echo kill "$SYN_PID"
 
 	if [ $? -ne 0 ] ; then
 		echo "Error: Can not kill old process $SYN_PID: $SYN_BIN"
@@ -78,7 +75,7 @@ while IFS= read -r PS_LINE ; do
 	sleep 1
 done < <(ps uax | grep -i "$SYN_DIR"/synergy | grep -v grep)
 
-synergyc -f --no-tray --debug FATAL --name ourMini --enable-drag-drop --enable-crypto "$1":24800 & disown 
+echo synergyc -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" & disown 
 
 END_OF_REMOTE_SCRIPT
 
@@ -86,6 +83,7 @@ END_OF_REMOTE_SCRIPT
 ### REMOTE SCRIPT ###
 ###      END      ###
 #####################
+
 
 # Decide on config file and port
 
@@ -126,6 +124,7 @@ if [ -z "$REMOTE_USER" ] ; then
 	REMOTE_USER="$USER"
 fi
 
+
 # Decide on IP address
 
 while IFS= read -r IFACE ; do
@@ -141,8 +140,6 @@ if [ -z "$MY_IP" ] ; then
 	exit 1
 fi
 
-#echo "$MY_IP"
-
 
 # TODO: Restart server
 
@@ -150,6 +147,6 @@ fi
 # Connect to clients
 
 while IFS= read -r CLIENT ; do
-	# echo ssh "$REMOTE_USER"@ourMini 'export PATH="$HOME"/bin:/usr/local/bin:"$PATH" ; synergy-client-start.sh '"$MY_IP $PORT"
+	echo "Connecting to $CLIENT as $REMOTE_USER"
 	echo "$REMORE_SCRIPT" | sed "s/@IP@/$MY_IP/g" | sed "s/@PORT@/$PORT/g" | ssh -T "$REMOTE_USER"@"$CLIENT"
 done < <(cat "$CONFIG" | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME")
