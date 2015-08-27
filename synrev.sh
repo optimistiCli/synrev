@@ -14,31 +14,39 @@ DEFAULT_PORT='24800'
 read -d '' REMORE_SCRIPT << 'EOREMOTE'
 #!/bin/bash
 
-# Usage: synergy-client-start.sh <server ip> [<server port>]
+# Beware of backslashes! Double them or else :-)
 
 SERVER_IP='@IP@'
 SERVER_PORT='@PORT@'
 
+function brag_and_exit {
+	if [ -n "$1" ] ; then
+		err_message=$'synrev error: '"$1"
+		exit_code=1
+	fi
+
+	logger "${err_message}${usage}"
+
+	exit $exit_code
+}
+
 if [ -z "$SERVER_IP" ] ; then
-	echo 'Error: no server IP'
-	exit 1
+	brag_and_exit 'No server IP'
 fi
 
 echo "$SERVER_IP" | grep -q '^[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}$'
 if [ $? -ne 0 ] ; then 
 	SERVER_DNS=$(host "$SERVER_IP")
 	if [ $? -ne 0 ] ; then
-		echo "Error: Server $SERVER_IP not found"
-		exit 1
+		brag_and_exit "Server $SERVER_IP not found"
 	fi
 	SERVER_IP=$(echo "$SERVER_DNS" | grep -o '[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}')
 fi
 
-# TODO: Test me
 if [ -n "$SERVER_PORT" ] ; then
 	echo "$SERVER_PORT" | grep -q '^[[:digit:]]\\+$'
 	if [ $? -ne 0 ] ; then 
-		echo "Error: Bad port number $SERVER_PORT"
+		echo "Bad port number $SERVER_PORT"
 		exit 1
 	fi
 else 
@@ -54,8 +62,7 @@ fi
 SYNERGYC_PATH=$(which synergyc)
 
 if [ $? -ne 0 ] ; then
-	echo 'Error: Can not find synergyc binary'
-	exit 1
+	brag_and_exit 'Can not find synergyc binary'
 fi
 
 while IFS= read -r PS_LINE ; do
@@ -69,16 +76,23 @@ while IFS= read -r PS_LINE ; do
 
 	PS_PID="${PS_LINE_ARRAY[1]}"
 	kill "$PS_PID"
-  
+
 	if [ $? -ne 0 ] ; then
 		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
 		exit 1
 	fi
-  
-	sleep 1
+
+	echo -n "Waiting there for $PS_COMMAND ($PS_PID) to exit..."
+	while ps "$PS_PID" >> /dev/null ; do
+		echo -n '.'
+		sleep $(echo '1 / 2' | bc -l)
+	done
+	echo ' done'
+
 done < <(ps uax)
 
-"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" & disown 
+
+"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" 2>> /dev/null & disown 
 
 EOREMOTE
 
@@ -167,25 +181,24 @@ while IFS= read -r PS_LINE ; do
 	fi
 
 	PS_PID="${PS_LINE_ARRAY[1]}"
-	kill "$PS_PID"
+	#kill "$PS_PID"
 
 	if [ $? -ne 0 ] ; then
 		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
 		exit 1
 	fi
 
-	echo -n "Waiting for $PS_COMMAND to exit..."
-	while ps "$PS_PID" >> /dev/null ; do
-		echo -n '.'
-		sleep $(echo '1 / 2' | bc -l)
-	done
-	echo ' done'
+	#echo -n "Waiting here for $PS_COMMAND ($PS_PID) to exit..."
+	#while ps "$PS_PID" >> /dev/null ; do
+	#	echo -n '.'
+	#	sleep $(echo '1 / 2' | bc -l)
+	#done
+	#echo ' done'
 
 done < <(ps uax)
 
-"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
+#"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
 
-exit
 
 # Connect to clients
 
