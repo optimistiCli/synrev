@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Remotely start synergy client on a mac
-# Usage: rem-sync.sh [-c <config>] [-p <port>] [-U <remote username>]
+# Usage: rem-sync.sh [-c <config>] [-p <port>] [-u <remote username>]
 
 DEFAULT_CONFIG="$HOME/.synergy.conf"
 DEFAULT_PORT='24800'
@@ -11,7 +11,7 @@ DEFAULT_PORT='24800'
 ###     START     ###
 #####################
 
-read -d '' REMORE_SCRIPT << 'EOREMOTE'
+read -d '' REMORE_SCRIPT << 'EOF'
 #!/bin/bash
 
 # Beware of backslashes! Double them or else :-)
@@ -83,8 +83,17 @@ while IFS= read -r PS_LINE ; do
 	fi
 
 	echo -n "Waiting there for $PS_COMMAND ($PS_PID) to exit..."
+	COUNTER=0
 	while ps "$PS_PID" >> /dev/null ; do
-		echo -n '.'
+		COUNTER=$((COUNTER+1))
+		if [[ "$COUNTER" -ge 10 ]] ; then
+			# Re-kill
+			echo -n '+'
+			kill "$PS_PID"
+		else
+			echo -n '.'
+		fi
+
 		sleep $(echo '1 / 2' | bc -l)
 	done
 	echo ' done'
@@ -92,9 +101,14 @@ while IFS= read -r PS_LINE ; do
 done < <(ps uax)
 
 
-"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" 2>> /dev/null & disown 
+"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" >> /dev/null 2>&1  & 
 
-EOREMOTE
+sleep 3
+
+exec 1>&- # close stdout
+exec 2>&- # close stderr
+
+EOF
 
 #####################
 ### REMOTE SCRIPT ###
@@ -181,23 +195,32 @@ while IFS= read -r PS_LINE ; do
 	fi
 
 	PS_PID="${PS_LINE_ARRAY[1]}"
-	#kill "$PS_PID"
+	kill "$PS_PID"
 
 	if [ $? -ne 0 ] ; then
 		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
 		exit 1
 	fi
 
-	#echo -n "Waiting here for $PS_COMMAND ($PS_PID) to exit..."
-	#while ps "$PS_PID" >> /dev/null ; do
-	#	echo -n '.'
-	#	sleep $(echo '1 / 2' | bc -l)
-	#done
-	#echo ' done'
+	echo -n "Waiting here for $PS_COMMAND ($PS_PID) to exit..."
+	COUNTER=0
+	while ps "$PS_PID" >> /dev/null ; do
+		COUNTER=$((COUNTER+1))
+		if [[ "$COUNTER" -ge 10 ]] ; then
+			# Re-kill
+			echo -n '+'
+			kill "$PS_PID"
+		else
+			echo -n '.'
+		fi
+
+		sleep $(echo '1 / 2' | bc -l)
+	done
+	echo ' done'
 
 done < <(ps uax)
 
-#"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
+"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
 
 
 # Connect to clients
