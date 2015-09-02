@@ -86,7 +86,8 @@ while IFS= read -r PS_LINE ; do
 	COUNTER=0
 	while ps "$PS_PID" >> /dev/null ; do
 		COUNTER=$((COUNTER+1))
-		if [[ "$COUNTER" -ge 10 ]] ; then
+		if [[ "$COUNTER" -ge 3 ]] ; then
+			COUNTER=0
 			# Re-kill
 			echo -n '+'
 			kill "$PS_PID"
@@ -206,7 +207,8 @@ while IFS= read -r PS_LINE ; do
 	COUNTER=0
 	while ps "$PS_PID" >> /dev/null ; do
 		COUNTER=$((COUNTER+1))
-		if [[ "$COUNTER" -ge 10 ]] ; then
+		if [[ "$COUNTER" -ge 3 ]] ; then
+			COUNTER=0
 			# Re-kill
 			echo -n '+'
 			kill "$PS_PID"
