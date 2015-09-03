@@ -32,6 +32,8 @@ Options:
      name of the user running this script.
 
 Requirements:
+  * Works only on Mac OS X, client and server. Probably cam make it 
+    work on Linux, not so sure about Windows / cygwin.
   * Synergy server config should use resolvable host names for client
     names. Server name must be the host name of the computer runnung
     this script.
@@ -186,6 +188,45 @@ if [ $? -ne 0 ] ; then
 	brag_and_exit 'Can not find synergys binary'
 fi
 
+
+# Get client names from config file
+
+SERVER_NAME=$(echo "$HOSTNAME" | sed 's/\.local$//')
+
+while IFS= read -r LINE ; do
+	if [ -n "$PROCESSING" ] ; then
+		# Inside links section
+
+		if echo "$LINE" | grep -iq '\<end\>' ; then
+			# Done processing the links section
+
+			break
+		else
+			if echo "$LINE" | grep -iq '^[[:blank:]]*[^:[:blank:]]\+:[[:blank:]]*$' ; then
+				SCREEN_NAME=$(echo "$LINE" | sed 's/^[[:blank:]]*//' | sed 's/:[[:blank:]]*$//')
+
+				if [ "$SCREEN_NAME" = "$SERVER_NAME" ] ; then
+					FOUND_SERVER='Yes'
+				else
+					CLIENT_NAMES=(${CLIENT_NAMES[@]} "$SCREEN_NAME")
+				fi
+			fi
+		fi
+	elif echo "$LINE" | grep -iq '\<section:[[:blank:]]\+links\>' ; then
+		# A-ha, here is the start of the links section
+		PROCESSING='Yes'
+	fi
+done < <(cat "$CONFIG")
+
+if [ -z "$FOUND_SERVER" ] ; then
+	brag_and_exit 'Server name not in the config file'
+fi
+
+if [ ${#CLIENT_NAMES[@]} -eq 0 ] ; then
+	brag_and_exit 'No clients in the config file'
+fi
+
+
 kill_all_synergies
 
 "$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
@@ -193,9 +234,9 @@ kill_all_synergies
 
 # Connect to clients
 
-while IFS= read -r CLIENT ; do
+for CLIENT in "${CLIENT_NAMES[@]}" ; do
 	echo "Connecting to $CLIENT as $REMOTE_USER"
 
 	REMORE_SCRIPT="CLIENTNAME='$CLIENT'"$'\n'"SERVER_IP='$MY_IP'"$'\n'"SERVER_PORT='$PORT'"$'\n\n'"$REMORE_SCRIPT"
 	echo "$REMORE_SCRIPT" | ssh -T "$REMOTE_USER"@"$CLIENT"
-done < <(cat "$CONFIG" | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME")
+done
