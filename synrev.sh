@@ -3,19 +3,64 @@
 # Remotely start synergy client on a mac
 # Usage: rem-sync.sh [-c <config>] [-p <port>] [-u <remote username>]
 
+# killall -d -m '^[Ss]ynergy[cs]?$'
+
 DEFAULT_CONFIG="$HOME/.synergy.conf"
 DEFAULT_PORT='24800'
+
+################################################
+
+read -d '' KILL_ALL_SYNERGIES << 'EOK'
+function kill_all_synergies {
+	while IFS= read -r PS_LINE ; do
+		PS_LINE_ARRAY=($PS_LINE)
+		PS_COMMAND="${PS_LINE_ARRAY[10]}"
+	
+		echo "$PS_COMMAND" | grep -iq 'synergy[sc]\\?$'
+		if [ $? -ne 0 ] ; then
+			continue
+		fi
+	
+		PS_PID="${PS_LINE_ARRAY[1]}"
+		kill "$PS_PID"
+	
+		if [ $? -ne 0 ] ; then
+			echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
+			exit 1
+		fi
+	
+		echo -n "Waiting for $PS_COMMAND ($PS_PID) to exit..."
+		COUNTER=0
+		while ps "$PS_PID" >> /dev/null ; do
+			COUNTER=$((COUNTER+1))
+			if [[ "$COUNTER" -ge 3 ]] ; then
+				COUNTER=0
+				# Re-kill
+				echo -n '+'
+				kill "$PS_PID"
+			else
+				echo -n '.'
+			fi
+	
+			sleep $(echo '1 / 2' | bc -l)
+		done
+		echo ' done'
+	
+	done < <(ps uax)
+}
+EOK
+eval "$KILL_ALL_SYNERGIES"
+
+################################################
+
 
 #####################
 ### REMOTE SCRIPT ###
 ###     START     ###
 #####################
 
-read -d '' REMORE_SCRIPT << 'EOF'
-#!/bin/bash
-
 # Beware of backslashes! Double them or else :-)
-
+read -d '' REMORE_SCRIPT << 'EOR'
 SERVER_IP='@IP@'
 SERVER_PORT='@PORT@'
 
@@ -53,8 +98,6 @@ else
 	SERVER_PORT='24800'
 fi
 
-echo Connecting back to "$SERVER_IP":"$SERVER_PORT"
-
 if uname | grep -qi '\\<darwin\\>' ; then
 	PATH=/Applications/Synergy.app/Contents/MacOS:"$HOME"/Applications/Synergy.app/Contents/MacOS:"$PATH"
 fi
@@ -65,42 +108,11 @@ if [ $? -ne 0 ] ; then
 	brag_and_exit 'Can not find synergyc binary'
 fi
 
-while IFS= read -r PS_LINE ; do
-	PS_LINE_ARRAY=($PS_LINE)
-	PS_COMMAND="${PS_LINE_ARRAY[10]}"
+# >>>
+kill_all_synergies
 
-	echo "$PS_COMMAND" | grep -iq 'synergy[sc]\\?$'
-	if [ $? -ne 0 ] ; then
-		continue
-	fi
 
-	PS_PID="${PS_LINE_ARRAY[1]}"
-	kill "$PS_PID"
-
-	if [ $? -ne 0 ] ; then
-		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
-		exit 1
-	fi
-
-	echo -n "Waiting there for $PS_COMMAND ($PS_PID) to exit..."
-	COUNTER=0
-	while ps "$PS_PID" >> /dev/null ; do
-		COUNTER=$((COUNTER+1))
-		if [[ "$COUNTER" -ge 3 ]] ; then
-			COUNTER=0
-			# Re-kill
-			echo -n '+'
-			kill "$PS_PID"
-		else
-			echo -n '.'
-		fi
-
-		sleep $(echo '1 / 2' | bc -l)
-	done
-	echo ' done'
-
-done < <(ps uax)
-
+echo Connecting back to "$SERVER_IP":"$SERVER_PORT"
 
 "$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" >> /dev/null 2>&1  & 
 
@@ -109,13 +121,14 @@ sleep 3
 exec 1>&- # close stdout
 exec 2>&- # close stderr
 
-EOF
+EOR
 
 #####################
 ### REMOTE SCRIPT ###
 ###      END      ###
 #####################
 
+REMORE_SCRIPT="$KILL_ALL_SYNERGIES"$'\n\n'"$REMORE_SCRIPT"
 
 # Decide on config file and port
 
@@ -186,41 +199,8 @@ if [ $? -ne 0 ] ; then
 	exit 1
 fi
 
-while IFS= read -r PS_LINE ; do
-	PS_LINE_ARRAY=($PS_LINE)
-	PS_COMMAND="${PS_LINE_ARRAY[10]}"
-
-	echo "$PS_COMMAND" | grep -iq 'synergy[sc]\?$'
-	if [ $? -ne 0 ] ; then
-		continue
-	fi
-
-	PS_PID="${PS_LINE_ARRAY[1]}"
-	kill "$PS_PID"
-
-	if [ $? -ne 0 ] ; then
-		echo "Error: Can not kill old process $PS_PID: $PS_COMMAND"
-		exit 1
-	fi
-
-	echo -n "Waiting here for $PS_COMMAND ($PS_PID) to exit..."
-	COUNTER=0
-	while ps "$PS_PID" >> /dev/null ; do
-		COUNTER=$((COUNTER+1))
-		if [[ "$COUNTER" -ge 3 ]] ; then
-			COUNTER=0
-			# Re-kill
-			echo -n '+'
-			kill "$PS_PID"
-		else
-			echo -n '.'
-		fi
-
-		sleep $(echo '1 / 2' | bc -l)
-	done
-	echo ' done'
-
-done < <(ps uax)
+# >>>>
+kill_all_synergies
 
 "$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
 
@@ -229,5 +209,8 @@ done < <(ps uax)
 
 while IFS= read -r CLIENT ; do
 	echo "Connecting to $CLIENT as $REMOTE_USER"
-	echo "$REMORE_SCRIPT" | sed "s/@IP@/$MY_IP/g" | sed "s/@PORT@/$PORT/g" | ssh -T "$REMOTE_USER"@"$CLIENT"
+	echo "$REMORE_SCRIPT" \
+		| sed "s/@IP@/$MY_IP/g" \
+		| sed "s/@PORT@/$PORT/g" \
+		| ssh -T "$REMOTE_USER"@"$CLIENT"
 done < <(cat "$CONFIG" | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME")
