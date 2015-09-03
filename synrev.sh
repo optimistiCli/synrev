@@ -13,13 +13,39 @@ DEFAULT_PORT='24800'
 ##################
 
 read -d '' FUNCTION_INJECTIONS << 'EOK'
+USAGE='Usage:
+  synrev.sh [-c <confif.file>] [-p <port>] [-u <username>] 
+
+Connect this keyboard and mouse of this computer to another 
+computer(s) with synergy. Basically this script uses ssh reverse the 
+client-server roles of synergy.
+
+Options:
+  -h Print this help and exit.
+  -c Synergy server config file. This script reads it for the client 
+     computer name(s) this computer keyboard and mouse will be 
+     connected to. If omitted defaults to .synergy.conf in home 
+     directory.
+  -p A port number synergy server on this computer will use. Defaults
+     to 24800.
+  -u User name used to connect to other computers. Defaults to local 
+     user name.
+
+Requirements:
+  * Synergy server config should use resolvable host names for client
+    names.
+  * This computer must be connected to Ethernet, wired or wireless.
+  * The user should be able to ssh from this computer to the all the 
+    clients (password or passwordless) using the same user name.
+'
+
 function brag_and_exit {
 	if [ -n "$1" ] ; then
-		ERR_MESSAGE=$'synrev error: '"$1"
+		ERR_MESSAGE='Error in synrev: '"$1"
 		EXIT_CODE=1
 	fi
 
-	echo "${ERR_MESSAGE}${USAGE}"
+	echo "${ERR_MESSAGE}"$'\\n\\n'"${USAGE}"
 	logger "${ERR_MESSAGE}"
 
 	exit $EXIT_CODE
@@ -47,29 +73,12 @@ EOK
 
 # Beware of backslashes! Double them or else :-)
 read -d '' REMORE_SCRIPT << 'EOR'
-SERVER_IP='@IP@'
-SERVER_PORT='@PORT@'
-
 if [ -z "$SERVER_IP" ] ; then
 	brag_and_exit 'No server IP'
 fi
 
-echo "$SERVER_IP" | grep -q '^[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}$'
-if [ $? -ne 0 ] ; then 
-	SERVER_DNS=$(host "$SERVER_IP")
-	if [ $? -ne 0 ] ; then
-		brag_and_exit "Server $SERVER_IP not found"
-	fi
-	SERVER_IP=$(echo "$SERVER_DNS" | grep -o '[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}\\.[[:digit:]]\\{1,3\\}')
-fi
-
-if [ -n "$SERVER_PORT" ] ; then
-	echo "$SERVER_PORT" | grep -q '^[[:digit:]]\\+$'
-	if [ $? -ne 0 ] ; then 
-		brag_and_exit "Bad port number $SERVER_PORT"
-	fi
-else 
-	SERVER_PORT='24800'
+if [ -z "$SERVER_PORT" ] ; then
+	brag_and_exit "No server port"
 fi
 
 if uname | grep -qi '\\<darwin\\>' ; then
@@ -89,8 +98,7 @@ echo Connecting back to "$SERVER_IP":"$SERVER_PORT"
 
 "$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" >> /dev/null 2>&1  & 
 
-sleep 3
-
+sleep 2
 EOR
 
 #####################
@@ -105,8 +113,12 @@ REMORE_SCRIPT="$FUNCTION_INJECTIONS"$'\n\n'"$REMORE_SCRIPT"
 
 # Decide on config file and port
 
-while getopts ":c:p:u:" opt ; do
+while getopts ":c:p:u:h" opt ; do
 	case $opt in
+		h)
+			echo "$USAGE"
+			exit
+			;;
 		c)
 			CONFIG="$OPTARG"
 			;;
@@ -177,8 +189,7 @@ kill_all_synergies
 
 while IFS= read -r CLIENT ; do
 	echo "Connecting to $CLIENT as $REMOTE_USER"
-	echo "$REMORE_SCRIPT" \
-		| sed "s/@IP@/$MY_IP/g" \
-		| sed "s/@PORT@/$PORT/g" \
-		| ssh -T "$REMOTE_USER"@"$CLIENT"
+
+	REMORE_SCRIPT="SERVER_IP='$MY_IP'"$'\n'"SERVER_PORT='$PORT'"$'\n\n'"$REMORE_SCRIPT"
+	echo "$REMORE_SCRIPT" | ssh -T "$REMOTE_USER"@"$CLIENT"
 done < <(cat "$CONFIG" | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME")
