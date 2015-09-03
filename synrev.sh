@@ -45,14 +45,15 @@ Requirements:
 
 function brag_and_exit {
 	if [ -n "$1" ] ; then
-		ERR_MESSAGE='Error in synrev: '"$1"
-		EXIT_CODE=1
+		ERR_MESSAGE="$1"
+	else
+		ERR_MESSAGE='Something went wrong'
 	fi
 
-	echo "${ERR_MESSAGE}"$'\\n\\n'"${USAGE}"
-	logger "${ERR_MESSAGE}"
+	echo 'Error: '"${ERR_MESSAGE}"$'\\n\\n'"${USAGE}"
+	logger "synrev error: ${ERR_MESSAGE}"
 
-	exit $EXIT_CODE
+	exit 1
 }
 
 function kill_all_synergies {
