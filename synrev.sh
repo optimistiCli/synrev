@@ -24,17 +24,19 @@ Options:
   -h Print this help and exit.
   -c Synergy server config file. This script reads it for the client 
      computer name(s) this computer keyboard and mouse will be 
-     connected to. If omitted defaults to .synergy.conf in home 
-     directory.
+     connected to. See http://synergy-project.org/wiki/Text_Config .
+     If omitted defaults to .synergy.conf in home directory.
   -p A port number synergy server on this computer will use. Defaults
      to 24800.
-  -u User name used to connect to other computers. Defaults to local 
-     user name.
+  -u User name used to connect to other computers. Defaults to the 
+     name of the user running this script.
 
 Requirements:
   * Synergy server config should use resolvable host names for client
-    names.
-  * This computer must be connected to Ethernet, wired or wireless.
+    names. Server name must be the host name of the computer runnung
+    this script.
+  * The computer that takes up the role of the synergy server must be 
+    connected to Ethernet, wired or wireless.
   * The user should be able to ssh from this computer to the all the 
     clients (password or passwordless) using the same user name.
 '
@@ -81,6 +83,10 @@ if [ -z "$SERVER_PORT" ] ; then
 	brag_and_exit "No server port"
 fi
 
+if [ -z "$CLIENTNAME" ] ; then
+	brag_and_exit "No client name"
+fi
+
 if uname | grep -qi '\\<darwin\\>' ; then
 	PATH=/Applications/Synergy.app/Contents/MacOS:"$HOME"/Applications/Synergy.app/Contents/MacOS:"$PATH"
 fi
@@ -96,7 +102,7 @@ kill_all_synergies
 
 echo Connecting back to "$SERVER_IP":"$SERVER_PORT"
 
-"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" >> /dev/null 2>&1  & 
+"$SYNERGYC_PATH" -f --no-tray --debug FATAL --name "$CLIENTNAME" --enable-drag-drop --enable-crypto "$SERVER_IP":"$SERVER_PORT" >> /dev/null 2>&1  & 
 
 sleep 2
 EOR
@@ -190,6 +196,6 @@ kill_all_synergies
 while IFS= read -r CLIENT ; do
 	echo "Connecting to $CLIENT as $REMOTE_USER"
 
-	REMORE_SCRIPT="SERVER_IP='$MY_IP'"$'\n'"SERVER_PORT='$PORT'"$'\n\n'"$REMORE_SCRIPT"
+	REMORE_SCRIPT="CLIENTNAME='$CLIENT'"$'\n'"SERVER_IP='$MY_IP'"$'\n'"SERVER_PORT='$PORT'"$'\n\n'"$REMORE_SCRIPT"
 	echo "$REMORE_SCRIPT" | ssh -T "$REMOTE_USER"@"$CLIENT"
 done < <(cat "$CONFIG" | grep ':' | grep -vi section | grep -o '[[:alnum:]\-_\.]\+' | sort -u | grep -v "$HOSTNAME")
