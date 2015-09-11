@@ -230,7 +230,7 @@ fi
 
 kill_all_synergies
 
-"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$HOSTNAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
+"$SYNERGYS_PATH" -f --no-tray --debug FATAL --name "$SERVER_NAME" --enable-drag-drop --enable-crypto -c "$CONFIG" --address :"$PORT" 2>> /dev/null & disown
 
 
 # Connect to clients
